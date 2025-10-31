@@ -85,6 +85,12 @@ async function run() {
                 res.status(500).json({ message: "Internal server error during upload." }); // Interner Serverfehler beim Upload.
             }
         });
+		app.get('/', (req, res) => {
+  res.status(200).json({ 
+    message: 'Server läuft erfolgreich auf Render!',
+    database: 'Verbunden mit MongoDB Atlas' 
+  });
+});
 
         // --- Start server ---
         app.listen(port, () => {
