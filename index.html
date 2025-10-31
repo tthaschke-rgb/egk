@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <title>Foto-Einsendung (MongoDB-Upload)</title>
+    <title>Foto-Einsendung (Node.js Server Upload)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Zusätzliche Styling-Optionen für bessere Lesbarkeit und mobile Nutzung */
@@ -42,7 +42,7 @@
 <body>
 
 <div class="container-card bg-white p-6 md:p-8 rounded-xl space-y-6">
-    <h1 class="text-3xl font-bold text-gray-800 text-center">Foto-Einsendung (Server-Upload)</h1>
+    <h1 class="text-3xl font-bold text-gray-800 text-center">Foto-Einsendung (Node.js Server Upload)</h1>
 
     <!-- Wichtiger Hinweis -->
     <div id="age-warning" class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg font-semibold">
@@ -102,16 +102,16 @@
 
         <!-- Wichtiger technischer Hinweis -->
         <p class="text-xs text-gray-500 mt-4 pt-2 border-t text-center">
-            *Die Daten werden über eine sichere Verbindung an den Server gesendet und in der Datenbank gespeichert.
+            *Die Daten werden über eine sichere Verbindung an Ihren Node.js Server gesendet und in der Datenbank gespeichert.
         </p>
     </form>
 </div>
 
 <script type="module">
-    // --- API Endpunkt (Ihr Server) ---
-    // Wenn Sie index.html und server.js auf demselben Server hosten, reicht '/upload'.
-    // Wenn Sie lokal testen (index.html als Datei öffnen, Server läuft auf Port 3000), 
-    // müssen Sie die volle URL verwenden: 'http://localhost:3000/upload'
+    // --- API Endpunkt für Node.js Server ---
+    // WICHTIG: Wenn die index.html NICHT vom Node.js Server selbst ausgeliefert wird (typisch bei lima-city),
+    // MÜSSEN Sie hier die VOLLE URL des Node.js-Dienstes eintragen!
+    // Beispiel: 'https://mein-servername.lima-city.de/upload'
     const API_ENDPOINT = '/upload'; 
 
     // --- DOM-Elemente ---
@@ -298,8 +298,20 @@
             });
 
             if (!response.ok) {
-                 const errorData = await response.json();
-                 throw new Error(errorData.message || `Server-Fehler: ${response.status}`);
+                 const errorText = await response.text();
+                 console.error('API Response Error Text:', errorText);
+                 
+                 let errorMessage = `Server-Fehler: ${response.status}.`;
+                 try {
+                     // Versuche, JSON zu parsen, um eine detaillierte Fehlermeldung zu erhalten
+                     const errorData = JSON.parse(errorText);
+                     errorMessage = errorData.message || errorMessage;
+                 } catch (e) {
+                      // Wenn es kein JSON ist (wahrscheinlich HTML oder ein Fehler von lima-city), zeige den Statuscode.
+                      errorMessage = `Netzwerk- oder Serverfehler: Status ${response.status}. Prüfen Sie, ob Node.js läuft.`;
+                 }
+
+                 throw new Error(errorMessage);
             }
 
             const result = await response.json();
