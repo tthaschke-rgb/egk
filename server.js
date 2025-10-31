@@ -1,4 +1,4 @@
-// Loads environment variables from the .env file
+// Lädt Umgebungsvariablen aus der .env-Datei (nur für lokale Tests)
 require('dotenv').config();
 
 const express = require('express');
@@ -6,97 +6,117 @@ const { MongoClient } = require('mongodb');
 const multer = require('multer');
 const cors = require('cors');
 
-// --- Configuration ---
+// --- Konfiguration ---
 const app = express();
-const port = process.env.PORT || 3000;
+// Lima-city oder andere Hoster verwenden oft die Umgebungsvariable PORT
+const port = process.env.PORT || 3000; 
 
-// MongoDB Connection String from the .env file
+// MongoDB Connection String aus der Umgebungsvariable (Muss auf dem Server gesetzt werden!)
 const uri = process.env.MONGODB_URI;
 if (!uri) {
-    console.error("Error: MONGODB_URI is not set in the .env file."); // Fehler: MONGODB_URI ist nicht in der .env-Datei gesetzt.
-    process.exit(1);
+    console.error("Error: MONGODB_URI ist nicht in den Umgebungsvariablen gesetzt."); 
+    process.exit(1); 
 }
 
 const client = new MongoClient(uri);
 
-// Multer configuration for file uploads
-// We use memoryStorage to keep the file in RAM and save it
-// as Base64 in the DB instead of writing it to disk.
+// Multer Konfiguration: Datei im Speicher halten (wichtig, da wir keinen lokalen Speicher benötigen)
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ 
+    storage: storage,
+    limits: { 
+        fileSize: 10 * 1024 * 1024 // Begrenze Dateigröße auf 10MB
+    }
+});
 
 // --- Middleware ---
-app.use(cors()); // Allows Cross-Origin requests (important for testing)
+// CORS ist wichtig, falls das Frontend und der Server auf unterschiedlichen Domains/Ports laufen 
+app.use(cors()); 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Main function to connect to MongoDB ---
+// --- API Endpoint: GET / (Status-Check) ---
+// DIESE ROUTE BEHEBT DAS "Cannot GET /"
+app.get('/', (req, res) => {
+    res.status(200).json({ 
+        status: "API Server läuft erfolgreich!", 
+        message: "Dies ist der API-Server für den Foto-Upload. Verwenden Sie den Endpunkt /upload für POST-Anfragen.",
+        expected_endpoint: "/upload (POST)"
+    });
+});
+
+
+// --- Hauptfunktion zur Verbindung mit MongoDB und Start des Servers ---
 async function run() {
     try {
-        // Connect to the MongoDB cluster
+        // Verbindung zum MongoDB Cluster herstellen
         await client.connect();
         console.log("Successfully connected to MongoDB."); // Erfolgreich mit MongoDB verbunden.
 
-        const database = client.db('fotoAppDB'); // Select database
-        const collection = database.collection('submissions'); // Select collection
-
-        // --- API Endpoint ---
-        // POST /upload
-        // 'photo' is the name of the <input type="file"> field in the FormData
+        const database = client.db('fotoAppDB'); // Datenbank auswählen
+        const collection = database.collection('submissions'); // Collection auswählen
+        
+        // --- API Endpoint: POST /upload ---
         app.post('/upload', upload.single('photo'), async (req, res) => {
             try {
-                // 1. Retrieve text data from req.body
+                // 1. Textdaten aus req.body abrufen
                 const { firstName, lastName, dob, age } = req.body;
 
-                if (!firstName || !lastName || !dob || !age) {
-                    return res.status(400).json({ message: "Missing text data." }); // Fehlende Textdaten.
+                // Zusätzliche Server-seitige Validierung
+                if (!firstName || !lastName || !dob || !age || isNaN(parseInt(age, 10))) {
+                    return res.status(400).json({ message: "Fehlende oder ungültige Textdaten (firstName, lastName, dob, age)." });
                 }
 
-                // 2. Create the document to be stored
+                // 2. Dokument für die Speicherung erstellen
                 const submissionData = {
                     firstName,
                     lastName,
                     dob,
-                    age: parseInt(age, 10), // Store age as a number
+                    age: parseInt(age, 10), // Alter als Zahl speichern
                     submittedAt: new Date(),
-                    photoBase64: null, // Default to null
+                    photoBase64: null, 
                     photoMimeType: null
                 };
 
-                // 3. Process photo data from req.file (if available)
+                // 3. Fotodaten verarbeiten (falls vorhanden)
+                const ageInt = parseInt(age, 10);
+                
                 if (req.file) {
-                    // Convert file to Base64 and insert into the document
+                    // Datei in Base64 umwandeln und in das Dokument einfügen
                     submissionData.photoBase64 = req.file.buffer.toString('base64');
                     submissionData.photoMimeType = req.file.mimetype;
-                } else if (parseInt(age, 10) >= 15) {
-                    // Photo is required if age >= 15
-                    return res.status(400).json({ message: "Photo is required for this age." }); // Foto ist für dieses Alter erforderlich.
+                } else if (ageInt >= 15) {
+                    // Foto ist erforderlich, wenn Alter >= 15
+                    return res.status(400).json({ message: "Foto ist für dieses Alter (>= 15) erforderlich." }); 
                 }
 
-                // 4. Insert document into MongoDB
+                // 4. Dokument in MongoDB einfügen
                 const result = await collection.insertOne(submissionData);
-                console.log(`New entry created with ID: ${result.insertedId}`); // Neuer Eintrag erstellt mit ID:
+                console.log(`New entry created with ID: ${result.insertedId}`);
 
-                // 5. Send success message to the frontend
-                res.status(201).json({ message: "Upload successful!", insertedId: result.insertedId }); // Upload erfolgreich!
+                // 5. Erfolgsmeldung an das Frontend senden
+                res.status(201).json({ message: "Upload erfolgreich!", insertedId: result.insertedId });
 
             } catch (error) {
-                console.error("Error processing upload:", error); // Fehler beim Verarbeiten des Uploads:
-                res.status(500).json({ message: "Internal server error during upload." }); // Interner Serverfehler beim Upload.
+                console.error("Error processing upload:", error);
+                // Wichtiger Hinweis: Bei zu großen Dateien fängt Multer den Fehler
+                if (error.code === 'LIMIT_FILE_SIZE') {
+                    return res.status(413).json({ message: "Die hochgeladene Datei ist zu groß (maximal 10MB erlaubt)." });
+                }
+                res.status(500).json({ message: "Interner Serverfehler während des Uploads." });
             }
         });
 
-        // --- Start server ---
+        // --- Server starten ---
         app.listen(port, () => {
-            console.log(`Server is running on http://localhost:${port}`); // Server läuft auf http://localhost:${port}
+            console.log(`Server is running on port ${port}`); 
         });
 
     } catch (err) {
-        console.error("Could not connect to MongoDB:", err); // Konnte nicht mit MongoDB verbinden:
-        process.exit(1);
+        console.error("Could not connect to MongoDB:", err); 
+        process.exit(1); 
     }
 }
 
-// Start server logic
+// Starte die Serverlogik
 run();
-
