@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Foto-Einsendung (MongoDB-Upload)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Zusätzliche Styling-Optionen für bessere Lesbarkeit und mobile Nutzung */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem 0;
+        }
+        .container-card {
+            max-width: 500px;
+            width: 95%;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 0 10px -5px rgba(0, 0, 0, 0.04);
+            margin: 1rem 0;
+        }
+        .input-style {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            width: 100%;
+            transition: border-color 0.3s;
+            -webkit-appearance: none;
+        }
+        .input-style:focus {
+            border-color: #2563eb;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-card bg-white p-6 md:p-8 rounded-xl space-y-6">
+    <h1 class="text-3xl font-bold text-gray-800 text-center">Foto-Einsendung (Server-Upload)</h1>
+
+    <!-- Wichtiger Hinweis -->
+    <div id="age-warning" class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg font-semibold">
+        <p>⚠️ Hinweis: Die Einsendung von Bildern ist nur ab einem Alter von 15 Jahren erforderlich.</p>
+    </div>
+
+    <form id="submission-form" class="space-y-5" novalidate>
+        <!-- Eingabefelder für persönliche Daten -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label for="firstName" class="block text-sm font-medium text-gray-700 mb-1">Vorname *</label>
+                <input type="text" id="firstName" class="input-style" required placeholder="Max">
+            </div>
+            <div>
+                <label for="lastName" class="block text-sm font-medium text-gray-700 mb-1">Nachname *</label>
+                <input type="text" id="lastName" class="input-style" required placeholder="Mustermann">
+            </div>
+        </div>
+
+        <div>
+            <label for="dob" class="block text-sm font-medium text-gray-700 mb-1">Geburtsdatum *</label>
+            <input type="text" id="dob" class="input-style" required placeholder="TT.MM.JJJJ" pattern="\d{2}\.\d{2}\.\d{4}">
+            <p id="age-message" class="mt-2 text-sm text-gray-600"></p>
+        </div>
+
+        <!-- Foto-Funktion -->
+        <div class="pt-4 border-t border-gray-200 space-y-4">
+            <label for="photoInput" class="block text-sm font-medium text-gray-700 mb-1">Foto aufnehmen/auswählen *</label>
+            
+            <button type="button" onclick="document.getElementById('photoInput').click()" 
+                    class="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out">
+                📷 Foto aufnehmen oder auswählen
+            </button>
+
+            <!-- Das eigentliche Datei-Input-Feld (versteckt) -->
+            <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+            
+
+            <!-- Foto-Vorschau -->
+            <div id="photo-preview-container" class="mt-4 hidden border border-gray-300 rounded-lg overflow-hidden relative bg-gray-100">
+                <img id="photo-preview" class="w-full h-auto object-cover max-h-64" alt="Vorschau des ausgewählten Fotos">
+                <div id="preview-overlay" class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center text-white text-lg font-semibold transition-opacity duration-300">
+                    Foto wird geladen...
+                </div>
+            </div>
+        </div>
+
+        <!-- Feedback- und Fehlermeldungen -->
+        <div id="status-message" class="text-center p-3 rounded-lg hidden"></div>
+
+        <!-- Sende-Button -->
+        <button type="submit" id="submit-button"
+                class="w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled>
+            ⬆️ Daten & Foto hochladen
+        </button>
+
+        <!-- Wichtiger technischer Hinweis -->
+        <p class="text-xs text-gray-500 mt-4 pt-2 border-t text-center">
+            *Die Daten werden über eine sichere Verbindung an den Server gesendet und in der Datenbank gespeichert.
+        </p>
+    </form>
+</div>
+
+<script type="module">
+    // --- API Endpunkt (Ihr Server) ---
+    // Wenn Sie index.html und server.js auf demselben Server hosten, reicht '/upload'.
+    // Wenn Sie lokal testen (index.html als Datei öffnen, Server läuft auf Port 3000), 
+    // müssen Sie die volle URL verwenden: 'http://localhost:3000/upload'
+    const API_ENDPOINT = '/upload'; 
+
+    // --- DOM-Elemente ---
+    const photoInput = document.getElementById('photoInput');
+    const photoPreviewContainer = document.getElementById('photo-preview-container');
+    const photoPreview = document.getElementById('photo-preview');
+    const previewOverlay = document.getElementById('preview-overlay');
+    const submitButton = document.getElementById('submit-button');
+    const statusMessage = document.getElementById('status-message');
+    const dobInput = document.getElementById('dob');
+    const ageMessage = document.getElementById('age-message');
+    const form = document.getElementById('submission-form');
+    const firstNameInput = document.getElementById('firstName');
+    const lastNameInput = document.getElementById('lastName');
+
+    let isOldEnough = false; // Status der Altersprüfung
+    let photoFile = null;    // Speichert die ausgewählte Datei
+
+    // --- Logik ---
+
+    /**
+     * Berechnet das Alter aus einem deutschen Datumsstring (TT.MM.JJJJ).
+     */
+    function calculateAge(birthdayString) {
+        if (!/^\d{2}\.\d{2}\.\d{4}$/.test(birthdayString)) {
+            return 0;
+        }
+
+        const parts = birthdayString.split('.');
+        const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        const birthDate = new Date(isoDate);
+
+        if (isNaN(birthDate.getTime()) || birthDate.getDate() !== parseInt(parts[0], 10)) {
+            return 0;
+        }
+        
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDifference = today.getMonth() - birthDate.getMonth();
+        
+        if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+        }
+        return age > 0 ? age : 0;
+    }
+
+    // Funktion zur Überprüfung des Formularstatus (Button aktivieren/deaktivieren)
+    function checkFormStatus() {
+        const isPhotoReady = photoFile !== null;
+        const isDobSet = dobInput.value.trim() !== '' && calculateAge(dobInput.value) > 0;
+        const isFirstNameSet = firstNameInput.value.trim() !== '';
+        const isLastNameSet = lastNameInput.value.trim() !== '';
+
+        if (!(isFirstNameSet && isLastNameSet && isDobSet)) {
+            submitButton.disabled = true;
+            return;
+        }
+        
+        if (isOldEnough) {
+            // Wenn 15 oder älter, MUSS ein Foto da sein.
+            submitButton.disabled = !isPhotoReady;
+        } else {
+            // Wenn jünger als 15, ist kein Foto nötig.
+            submitButton.disabled = false;
+        }
+    }
+
+
+    // Funktion zur Überprüfung des Alters und Aktualisierung der UI
+    function handleAgeCheck() {
+        const dobValue = dobInput.value.trim();
+        const requiredAge = 15; // ALTER IST 15
+
+        if (dobValue && /^\d{2}\.\d{2}\.\d{4}$/.test(dobValue)) {
+            const age = calculateAge(dobValue);
+
+            if (age === 0) {
+                 ageMessage.textContent = 'Ungültiges Datum. Bitte TT.MM.JJJJ verwenden.';
+                 ageMessage.className = 'mt-2 text-sm text-red-600';
+                 isOldEnough = false;
+            }
+            else if (age >= requiredAge) {
+                ageMessage.textContent = `Ihr Alter: ${age}. Ein Foto ist erforderlich.`;
+                ageMessage.className = 'mt-2 text-sm text-green-600';
+                isOldEnough = true;
+            } else {
+                ageMessage.textContent = `Ihr Alter: ${age}. Ein Foto ist nicht erforderlich.`;
+                ageMessage.className = 'mt-2 text-sm text-red-600';
+                isOldEnough = false;
+            }
+        } else {
+            ageMessage.textContent = '';
+            isOldEnough = false;
+        }
+        
+        checkFormStatus();
+    }
+
+    /**
+     * Hilfsfunktion für Statusmeldungen.
+     */
+    function showStatus(message, isError = false) {
+        statusMessage.innerHTML = `<p class="font-semibold">${message}</p>`;
+        if (isError) {
+            statusMessage.className = 'text-center p-3 rounded-lg bg-red-100 text-red-800';
+        } else {
+            statusMessage.className = 'text-center p-3 rounded-lg bg-green-100 text-green-800';
+        }
+        statusMessage.classList.remove('hidden');
+    }
+
+    // Event-Listener für das Geburtsdatum und Textfelder
+    dobInput.addEventListener('input', handleAgeCheck);
+    firstNameInput.addEventListener('input', checkFormStatus);
+    lastNameInput.addEventListener('input', checkFormStatus);
+
+    // Event-Listener für die Foto-Eingabe 
+    photoInput.addEventListener('change', function() {
+        statusMessage.classList.add('hidden');
+        photoFile = this.files[0] || null;
+        
+        if (photoFile) {
+            // Zeige die Vorschau
+            photoPreview.src = URL.createObjectURL(photoFile);
+            photoPreviewContainer.classList.remove('hidden');
+            previewOverlay.classList.remove('hidden', 'opacity-0'); 
+            previewOverlay.textContent = "Foto wird geladen...";
+
+            photoPreview.onload = () => {
+                 previewOverlay.textContent = "Foto erfolgreich geladen";
+                 setTimeout(() => {
+                    previewOverlay.classList.add('opacity-0');
+                    setTimeout(() => previewOverlay.classList.add('hidden'), 300);
+                 }, 1000); 
+            };
+        } else {
+            photoPreviewContainer.classList.add('hidden');
+        }
+        
+        checkFormStatus();
+    });
+
+
+    // Haupt-Funktion: Versenden per Fetch an den Server
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const firstName = firstNameInput.value.trim();
+        const lastName = lastNameInput.value.trim();
+        const dob = dobInput.value.trim();
+        const age = calculateAge(dob);
+        
+        // Allgemeine Validierung
+        if (age === 0) {
+            showStatus('Ungültiges Geburtsdatum. Bitte verwenden Sie TT.MM.JJJJ.', true);
+            return;
+        }
+        if (isOldEnough && !photoFile) {
+            showStatus('Da Sie 15 oder älter sind, wählen Sie bitte ein Foto aus.', true);
+            return;
+        }
+        
+        // UI für Upload vorbereiten
+        submitButton.disabled = true;
+        submitButton.textContent = "Lade hoch...";
+        showStatus("Verbinde mit Server und lade Daten hoch...", false);
+
+        // FormData-Objekt erstellen
+        const formData = new FormData();
+        formData.append('firstName', firstName);
+        formData.append('lastName', lastName);
+        formData.append('dob', dob);
+        formData.append('age', age.toString());
+        
+        if (isOldEnough && photoFile) {
+            // Das Foto-File-Objekt direkt anhängen
+            formData.append('photo', photoFile, photoFile.name);
+        }
+
+        try {
+            const response = await fetch(API_ENDPOINT, {
+                method: 'POST',
+                body: formData, // Kein 'Content-Type' Header nötig, 'fetch' setzt ihn bei FormData automatisch
+            });
+
+            if (!response.ok) {
+                 const errorData = await response.json();
+                 throw new Error(errorData.message || `Server-Fehler: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            showStatus("✅ Erfolgreich hochgeladen!", false);
+            submitButton.textContent = "Erfolgreich gesendet";
+            
+            // Formular zurücksetzen
+            form.reset();
+            photoFile = null;
+            photoPreviewContainer.classList.add('hidden');
+            ageMessage.textContent = '';
+            isOldEnough = false;
+
+        } catch (error) {
+            console.error('Upload-Fehler:', error);
+            showStatus(`Fehler beim Upload: ${error.message}. Bitte versuchen Sie es später erneut.`, true);
+            submitButton.disabled = false; // Button wieder aktivieren
+            submitButton.textContent = "⬆️ Daten & Foto hochladen";
+        }
+    });
+
+    // Initialer Check beim Laden der Seite
+    document.addEventListener('DOMContentLoaded', () => {
+        handleAgeCheck(); // Prüft Alter und setzt Status/Button
+    });
+</script>
+
+</body>
+</html>
