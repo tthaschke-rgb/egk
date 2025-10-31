@@ -109,10 +109,8 @@
 
 <script type="module">
     // --- API Endpunkt für Node.js Server ---
-    // WICHTIG: Wenn die index.html NICHT vom Node.js Server selbst ausgeliefert wird (typisch bei lima-city),
-    // MÜSSEN Sie hier die VOLLE URL des Node.js-Dienstes eintragen!
-    // Beispiel: 'https://mein-servername.lima-city.de/upload'
-    const API_ENDPOINT = '/upload'; 
+    // ANPASSUNG: Die vollständige URL des Render-Dienstes ist nun eingetragen.
+    const API_ENDPOINT = 'https://egk.onrender.com/upload'; 
 
     // --- DOM-Elemente ---
     const photoInput = document.getElementById('photoInput');
@@ -308,7 +306,7 @@
                      errorMessage = errorData.message || errorMessage;
                  } catch (e) {
                       // Wenn es kein JSON ist (wahrscheinlich HTML oder ein Fehler von lima-city), zeige den Statuscode.
-                      errorMessage = `Netzwerk- oder Serverfehler: Status ${response.status}. Prüfen Sie, ob Node.js läuft.`;
+                      errorMessage = `Netzwerk- oder Serverfehler: Status ${response.status}. Prüfen Sie die URL und den Serverstatus.`;
                  }
 
                  throw new Error(errorMessage);
